@@ -26,10 +26,10 @@ function(my_set_common_properties target)
 
     #target_link_options(${target} PUBLIC -static)
    
-    # target_include_directories(${target} PUBLIC
-    #     ${MY_DIR_PATH}/include
-    #     ${MY_DIR_PATH}/../CppHttpFileServer/include
-    # )
+    target_include_directories(${target} PUBLIC
+        ${MY_DIR_PATH}/include
+        #${MY_DIR_PATH}/../CppHttpFileServer/include
+    )
 
 
     
@@ -64,4 +64,18 @@ my_set_common_properties(test)
 my_set_target_out(test)
 
 
+add_executable(proxytarget ./proxy.cpp)
+
+
+my_set_common_properties(proxytarget)
+
+my_set_target_out(proxytarget)
+
+
+add_executable(rwloop ./rwloop.cpp)
+
+
+my_set_common_properties(rwloop)
+
+my_set_target_out(rwloop)
 
