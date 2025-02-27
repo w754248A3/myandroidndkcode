@@ -106,7 +106,8 @@ public:
 class IEvent {
 public:
   virtual void OnEvent(EpollEvent flag) = 0;
-  virtual ~IEvent() { Print("IEvent delete call"); }
+  virtual ~IEvent() {// Print("IEvent delete call");
+   }
 };
 
 class MyAsyncData : mystd::Delete_Base {
@@ -213,6 +214,8 @@ public:
     if (-1 == close(m_handle)) {
       Exit("close Socket error");
     }
+
+    //Print("socket close");
   }
 };
 
@@ -240,7 +243,7 @@ struct ReadWriteEvent : mystd::Delete_Base, public IEvent {
 
   void_coroutine_handle m_write_handle;
 
-  ReadWriteEvent():m_is_has_read(false), m_is_has_write(false){
+  ReadWriteEvent():m_is_has_read(false), m_is_has_write(false), m_read_handle(), m_write_handle(){
 
   }
 
@@ -283,13 +286,13 @@ struct ReadWriteEvent : mystd::Delete_Base, public IEvent {
   void OnEvent(EpollEvent flag) {
 
     if ((flag & EpollEvent::EPollIn) == EpollEvent::EPollIn) {
-        Print("can read event");
+        //Print("can read event");
         Read();
     }
     
     
     if ((flag & EpollEvent::EPollOut) == EpollEvent::EPollOut) {
-        Print("can write event");
+        //Print("can write event");
         Write();
     } 
     
@@ -298,9 +301,8 @@ struct ReadWriteEvent : mystd::Delete_Base, public IEvent {
     }
     
     if ((flag & EpollEvent::EPollError) == EpollEvent::EPollError) {
-        Print("can error event");
-        Read();
-        Write();
+        //Print("can error event");
+        Exit("epoll event is error");
     } 
 
 
@@ -312,17 +314,36 @@ struct ReadWriteEvent : mystd::Delete_Base, public IEvent {
 class TcpSocket : public Socket {
   ReadWriteEvent *m_event;
   size_t m_index;
+  EpollEvent m_on_run_op;
+
+  void RemoveEvent(EpollEvent mode) {
+
+    if((mode& m_on_run_op) != EpollEvent::None){
+      m_on_run_op= (~mode)& m_on_run_op;
+      Info::GetMyAsyncData().GetEpoll().Reset(GetHandle(),  m_on_run_op, m_event);
+    }
+
+  }
+
+  void SetEvent(EpollEvent mode) {
+    if((mode& m_on_run_op) != mode){
+      m_on_run_op= mode| m_on_run_op;
+      Info::GetMyAsyncData().GetEpoll().Reset(GetHandle(),  m_on_run_op, m_event);
+    }
+     
+
+  }
 
 public:
-  TcpSocket(int handle): Socket(handle) {
+  TcpSocket(int handle): Socket(handle), m_event(nullptr), m_index(0), m_on_run_op(EpollEvent::None) {
     auto event = std::make_unique<ReadWriteEvent>();
-
+  
     m_event = event.get();
 
     m_index = Info::GetMyAsyncData().AddEvent(std::move(event));
 
     Info::GetMyAsyncData().GetEpoll().Add(
-        GetHandle(), EpollEvent::EPollIn | EpollEvent::EPollOut, m_event);
+        GetHandle(), EpollEvent::EPollIn | EpollEvent::EPollOut | EpollEvent::EpollOneShot , m_event);
   }
 
   ~TcpSocket() override {
@@ -336,14 +357,16 @@ public:
       awaiter(ReadWriteEvent &event) : m_event(event) {}
       bool await_ready() const noexcept { return false; }
       void await_suspend(void_coroutine_handle handle)  {
-        Print("set read handle");
+        //Print("set read handle");
         m_event.SetRead(handle);
       }
       void await_resume() const noexcept {}
     };
-    Print("read await start");
+    //Print("read await start");
+    SetEvent(EpollEvent::EPollIn);
     co_await awaiter(*m_event);
-    Print("read await end");
+    RemoveEvent(EpollEvent::EPollIn);
+    //Print("read await end");
     auto count = recv(this->GetHandle(), buffer, size, 0);
 
     if (count == -1) {
@@ -360,13 +383,15 @@ public:
       awaiter(ReadWriteEvent &event) : m_event(event) {}
       bool await_ready() const noexcept { return false; }
       void await_suspend(void_coroutine_handle handle) noexcept {
-        Print("set write handle");
+        //Print("set write handle");
         m_event.SetWrite(handle);
       }
       void await_resume() const noexcept {}
     };
-
+    
+    SetEvent(EpollEvent::EPollOut);
     co_await awaiter(*m_event);
+    RemoveEvent(EpollEvent::EPollOut);
 
     auto count = send(this->GetHandle(), buffer, size, 0);
 
@@ -406,10 +431,10 @@ struct AcceptEvent : mystd::Delete_Base, public IEvent {
   void OnEvent(EpollEvent flag) {
 
     if (flag == EpollEvent::EPollIn) {
-        Print("can accept  event");
+        //Print("can accept  event");
       Read();
     } else if (flag == EpollEvent::EPollError) {
-         Print("can accept error  event");
+         //Print("can accept error  event");
       Read();
 
     } else {

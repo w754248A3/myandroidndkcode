@@ -22,7 +22,7 @@ namespace mystd
     std::string GetSysteamErrorMessage(int code)
     {
         char buffer[1024];
-        auto res = strerror_r(code, buffer, sizeof(buffer));
+        strerror_r(code, buffer, sizeof(buffer));
         return std::string(buffer);
     }
 
@@ -97,6 +97,14 @@ namespace mystd
         using TN = typename std::underlying_type_t<T>;
 
         return static_cast<T>(static_cast<TN>(left) & static_cast<TN>(right));
+    }
+
+    template <EnumType T>
+    inline T operator~(T value) noexcept
+    {
+        using TN = typename std::underlying_type_t<T>;
+
+        return static_cast<T>(~(static_cast<TN>(value)));
     }
 
     class Delete_Base

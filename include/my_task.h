@@ -47,7 +47,7 @@ template <typename T> struct MyTask {
 
     //! 生成协程返回值
     auto get_return_object() {
-        Print("get_return_object", (void *)this);
+        //Print("get_return_object", (void *)this);
       return MyTask<T>{handle_type::from_promise(*this)};
     }
 

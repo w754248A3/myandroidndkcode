@@ -1,4 +1,5 @@
 
+#include <cerrno>
 #ifndef _MY_EPOLL
 #define _MY_EPOLL 1
 
@@ -19,6 +20,8 @@ namespace mystd
 
     enum class EpollEvent
     {
+        None=0,
+
         EPollIn = EPOLLIN,
 
         EPollOut = EPOLLOUT,
@@ -51,8 +54,9 @@ namespace mystd
             event.data.ptr = ptr;
 
             if (-1 == epoll_ctl(m_handle, static_cast<int>(mod), handle, &event))
-            {
-                Exit("set epoll error");
+            {   auto err = errno;
+                 
+                Exit(err,  err, "set epoll error", "mode", (int)mod, "event", (int)epollEvent);
             }
         }
 

@@ -21,6 +21,14 @@ function(my_set_common_properties target)
         -Wconversion
         -Werror
         -Wextra
+        -Wall
+        -Wpedantic 
+        -Wuninitialized
+        -Wsometimes-uninitialized
+        -Werror=uninitialized
+        -Wmissing-field-initializers
+        -Wgnu-empty-initializer
+        #-Wmaybe-uninitialized
         #-fconcepts
     )
 
@@ -56,7 +64,7 @@ endfunction()
 
 
 
-add_executable(test ./main.cpp)
+add_executable(test ./test.cpp)
 
 
 my_set_common_properties(test)
@@ -78,4 +86,3 @@ add_executable(rwloop ./rwloop.cpp)
 my_set_common_properties(rwloop)
 
 my_set_target_out(rwloop)
-
