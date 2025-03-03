@@ -21,8 +21,14 @@ namespace mystd
 
     std::string GetSysteamErrorMessage(int code)
     {
-        char buffer[1024];
-        strerror_r(code, buffer, sizeof(buffer));
+        char buffer[2048];
+        auto res = strerror_r(code, buffer, sizeof(buffer));
+        if(res != 0){
+
+            Print("GetSysteamErrorMessage error");
+            exit(EXIT_FAILURE);
+        }
+
         return std::string(buffer);
     }
 

@@ -1,4 +1,5 @@
 
+#include <cerrno>
 #include <coroutine>
 #include <cstddef>
 #include <cstdlib>
@@ -184,15 +185,22 @@ class Socket : mystd::Delete_Base {
   int m_handle;
 
 protected:
-  Socket(int handle) noexcept : m_handle(handle) {}
+  
+  
+  Socket(int handle) noexcept : m_handle(handle) {
+  }
 
-  Socket() noexcept {
-    m_handle = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+  static auto CreateSocket() noexcept {
+    auto handle = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
 
-    if (m_handle == -1) {
+    if (handle == -1) {
       Exit("create socket error");
     }
+    
+    return handle;
   }
+
+  
 
 public:
   int GetHandle() const noexcept { return m_handle; }
@@ -215,7 +223,7 @@ public:
       Exit("close Socket error");
     }
 
-    //Print("socket close");
+    Print("socket close");
   }
 };
 
@@ -273,6 +281,9 @@ struct ReadWriteEvent : mystd::Delete_Base, public IEvent {
 
       m_read_handle.resume();
     }
+    else{
+      Print("read event is not set");
+    }
   }
 
   void Write() {
@@ -280,6 +291,9 @@ struct ReadWriteEvent : mystd::Delete_Base, public IEvent {
       m_is_has_write = false;
 
       m_write_handle.resume();
+    }
+    else{
+      Print("write event is not set");
     }
   }
 
@@ -297,12 +311,17 @@ struct ReadWriteEvent : mystd::Delete_Base, public IEvent {
     } 
     
     if((flag & EpollEvent::EPollHup) == EpollEvent::EPollHup){
-        Exit("hup error");
+        Print("hup error");
+        Read();
     }
     
     if ((flag & EpollEvent::EPollError) == EpollEvent::EPollError) {
-        //Print("can error event");
-        Exit("epoll event is error");
+        Print("can error event");
+        //Exit("epoll event is error");
+
+        Read();
+
+        Write();
     } 
 
 
@@ -335,7 +354,13 @@ class TcpSocket : public Socket {
   }
 
 public:
-  TcpSocket(int handle): Socket(handle), m_event(nullptr), m_index(0), m_on_run_op(EpollEvent::None) {
+
+  TcpSocket():mystd::TcpSocket(Socket::CreateSocket()){
+
+  }
+
+  TcpSocket(int handle):Socket(handle), m_event(nullptr), m_index(0), m_on_run_op(EpollEvent::None) {
+    m_on_run_op = EpollEvent::EPollIn | EpollEvent::EPollOut | EpollEvent::EpollOneShot ;
     auto event = std::make_unique<ReadWriteEvent>();
   
     m_event = event.get();
@@ -343,7 +368,7 @@ public:
     m_index = Info::GetMyAsyncData().AddEvent(std::move(event));
 
     Info::GetMyAsyncData().GetEpoll().Add(
-        GetHandle(), EpollEvent::EPollIn | EpollEvent::EPollOut | EpollEvent::EpollOneShot , m_event);
+        GetHandle(), m_on_run_op, m_event);
   }
 
   ~TcpSocket() override {
@@ -363,6 +388,7 @@ public:
       void await_resume() const noexcept {}
     };
     //Print("read await start");
+    
     SetEvent(EpollEvent::EPollIn);
     co_await awaiter(*m_event);
     RemoveEvent(EpollEvent::EPollIn);
@@ -370,7 +396,7 @@ public:
     auto count = recv(this->GetHandle(), buffer, size, 0);
 
     if (count == -1) {
-      co_return SocketOP<ssize_t>{GetSocketError(), count};
+      co_return SocketOP<ssize_t>{errno, count};
     } else {
       co_return SocketOP<ssize_t>{0, count};
     }
@@ -388,7 +414,7 @@ public:
       }
       void await_resume() const noexcept {}
     };
-    
+   
     SetEvent(EpollEvent::EPollOut);
     co_await awaiter(*m_event);
     RemoveEvent(EpollEvent::EPollOut);
@@ -400,6 +426,41 @@ public:
     } else {
       co_return SocketOP<ssize_t>{0, count};
     }
+  }
+  inline static int s_count=0;
+  MyTask<SocketOP<int>> AsyncConnect(const IPAddress& ip){
+    struct awaiter {
+      ReadWriteEvent &m_event;
+      awaiter(ReadWriteEvent &event) : m_event(event) {}
+      bool await_ready() const noexcept { return false; }
+      void await_suspend(void_coroutine_handle handle) noexcept {
+       
+        m_event.SetWrite(handle);
+      }
+      void await_resume() const noexcept {}
+    };
+
+    auto res = connect(this->GetHandle(), ip.get(), (uint)ip.getlen());
+
+    auto err = errno;
+
+    auto issync = res == 0;
+    s_count++;
+    Print("start connect", s_count, issync);
+    RemoveEvent(EpollEvent::EpollOneShot);
+    co_await awaiter(*m_event);
+    SetEvent(EpollEvent::EpollOneShot);
+    
+    s_count--;
+    Print("end connect", s_count, issync);
+    
+    if(res == -1 && err != EINPROGRESS){
+      co_return SocketOP<int>{err, 0};
+    }
+    else{
+      co_return SocketOP<int>{0, 0};
+    }
+    
   }
 };
 
@@ -449,7 +510,8 @@ class TcpSocketListen : public Socket {
   size_t m_index;
 
 public:
-  TcpSocketListen() {
+  TcpSocketListen():Socket(Socket::CreateSocket()) {
+    
     auto event = std::make_unique<AcceptEvent>();
     m_event = event.get();
     m_index = Info::GetMyAsyncData().AddEvent(std::move(event));
@@ -462,6 +524,12 @@ public:
     Info::GetMyAsyncData().DeleteEvent(m_index);
   }
   void Bind(const IPAddress &ip) {
+
+    int on = 1;
+    if(-1==setsockopt(this->GetHandle(), SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on))){
+      Exit("setsockopt SO_REUSEADDR error");
+    }  
+
     if (bind(this->GetHandle(), ip.get(), (uint)ip.getlen()) == -1) {
       Exit("bind error");
     }
@@ -496,6 +564,55 @@ public:
 
     co_return SocketOP<std::shared_ptr<TcpSocket>>{
         0, std::make_shared<TcpSocket>(socket)};
+  }
+};
+
+class Dns {
+
+  static auto GetIPv4AddressByName(const std::string &name) {
+    addrinfo *res;
+    int code = getaddrinfo(name.c_str(), nullptr, nullptr, &res);
+
+    if (code != 0) {
+      Exit("GetIPv4AddressByName error");
+      // 进程会退出不会往下执行
+    }
+
+    auto del = [](auto p) { freeaddrinfo(p); };
+
+    return std::unique_ptr<addrinfo, decltype(del)>{res, del};
+  }
+
+public:
+  static auto GetIPv4AddressByNameList(const std::string &name) {
+    auto result = GetIPv4AddressByName(name);
+
+    std::vector<IPAddress> list{};
+
+    for (auto value = result.get(); value != nullptr; value = value->ai_next) {
+      if (value->ai_family == AF_INET) {
+        auto item = reinterpret_cast<sockaddr_in *>(value->ai_addr);
+
+        list.push_back(IPAddress{*item});
+      }
+    }
+
+    return list;
+  }
+
+  static bool GetIPv4AddressByNameFirst(const std::string &name, IPAddress &ip) {
+    auto result = GetIPv4AddressByName(name);
+
+    for (auto value = result.get(); value != nullptr; value = value->ai_next) {
+      if (value->ai_family == AF_INET) {
+        auto item = reinterpret_cast<sockaddr_in *>(value->ai_addr);
+        Print("set ipadress ref");
+        ip = IPAddress{*item};
+        return true;
+      }
+    }
+
+    return false;
   }
 };
 

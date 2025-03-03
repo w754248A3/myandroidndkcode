@@ -72,7 +72,7 @@ my_set_common_properties(test)
 my_set_target_out(test)
 
 
-add_executable(proxytarget ./proxy.cpp)
+add_executable(proxytarget ./httpsproxy.cpp)
 
 
 my_set_common_properties(proxytarget)
