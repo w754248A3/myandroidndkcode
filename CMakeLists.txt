@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 project(myandroidndkcode CXX)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 set(MY_DIR_PATH ${PROJECT_SOURCE_DIR})
@@ -28,6 +28,7 @@ function(my_set_common_properties target)
         -Werror=uninitialized
         -Wmissing-field-initializers
         -Wgnu-empty-initializer
+        
         #-Wmaybe-uninitialized
         #-fconcepts
     )
